@@ -152,9 +152,13 @@ at_key_level = near_pdh or near_pdl or near_pdc
 long_score  = (trend_bull   ? 1 : 0) + (mom_bull  ? 1 : 0) + (vol_bull  ? 1 : 0) + (trigger_bull ? 1 : 0)
 short_score = (trend_bear   ? 1 : 0) + (mom_bear  ? 1 : 0) + (vol_bear  ? 1 : 0) + (trigger_bear ? 1 : 0)
 
-// 3/4 confluence = high probability signal; 4/4 = premium signal (labelled differently)
-raw_long  = long_score  >= 3 and in_session
-raw_short = short_score >= 3 and in_session
+// Ranging market detection: when ADX is weak the market is chopping, not trending.
+// In a trending market (ADX ≥ threshold) a 3/4 score is sufficient.
+// In a ranging market (ADX < threshold) all 4 layers must agree — the setup needs to
+// be exceptionally strong to be worth trading against noise.
+min_score = adx_ok ? 3 : 4
+raw_long  = long_score  >= min_score and in_session
+raw_short = short_score >= min_score and in_session
 
 // ── 3b. Daily signal gate + cooldown (1 signal per day max) ─────
 // daily_used resets on each new calendar day; only the first qualifying
