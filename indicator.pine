@@ -32,7 +32,6 @@ i_tp2_rr      = input.float(2.0, "TP2 R:R",           minval=1.0, step=0.25, gro
 i_tp3_rr      = input.float(3.0, "TP3 R:R",           minval=1.5, step=0.25, group="Risk Management")
 
 // — Filters —
-i_cooldown    = input.int(4,     "Min Bars Between Signals", minval=1, group="Filters")
 i_pivot_lb    = input.int(5,     "Pivot Lookback/Forward",   minval=2, group="Filters")
 i_use_session = input.bool(false, "Enable Session Filter",              group="Filters")
 i_session     = input.session("0930-1600", "Active Session (exchange time)", group="Filters")
@@ -65,10 +64,12 @@ htf_tf = "240"
 htf_ema      = request.security(syminfo.tickerid, htf_tf, ta.ema(close, 50),  lookahead=barmerge.lookahead_off)
 htf_close    = request.security(syminfo.tickerid, htf_tf, close,               lookahead=barmerge.lookahead_off)
 
-// Slope compared across 3 bars (not 1) — prevents a single 4H candle temporarily
-// flipping the HTF bias at the start or end of a consolidation
-htf_slope_up = htf_ema > htf_ema[3]
-htf_slope_dn = htf_ema < htf_ema[3]
+// Slope compared using a 4-bar offset (= one full 4H period on the 1H chart).
+// This guarantees every 1H bar compares the current 4H EMA to the one exactly
+// one 4H period earlier — avoiding the [3] issue where bar 4 of each 4H period
+// would compare to itself (same completed value), producing a false zero-slope read.
+htf_slope_up = htf_ema > htf_ema[4]
+htf_slope_dn = htf_ema < htf_ema[4]
 
 // Full EMA stack required (9 > 21 > 50 for bull, reverse for bear)
 // htf_close check ensures price is on the correct side of the 4H EMA50, not merely that
@@ -173,25 +174,21 @@ ema_sep_ok = math.abs(ema_slow - ema_trend) > atr * 0.2
 raw_long  = long_score  >= min_score and in_session and ema_sep_ok
 raw_short = short_score >= min_score and in_session and ema_sep_ok
 
-// ── 3b. Daily signal gate + cooldown (1 signal per day max) ─────
+// ── 3b. Daily signal gate (1 signal per day max) ────────────────
 // daily_used resets on each new calendar day; only the first qualifying
 // signal of the day fires — subsequent setups that session are suppressed.
-var int  cooldown_bars = 0
-var bool daily_used   = false
-
-cooldown_bars := math.max(0, cooldown_bars - 1)
+var bool daily_used = false
 
 if dayofmonth != dayofmonth[1] or month != month[1]
     daily_used := false
 
 daily_ok = not daily_used
 
-valid_long  = raw_long  and cooldown_bars == 0 and daily_ok
-valid_short = raw_short and cooldown_bars == 0 and daily_ok
+valid_long  = raw_long  and daily_ok
+valid_short = raw_short and daily_ok
 
 if valid_long or valid_short
-    cooldown_bars := i_cooldown
-    daily_used    := true
+    daily_used := true
 
 // ── 3c. SL / TP ───────────────────────────────────────────────────
 // Stop: wider of (recent structure extreme) vs (ATR-based minimum distance) — most conservative SL
@@ -368,10 +365,13 @@ if i_show_table and barstate.islast
     table.cell(dash, 1, 0, sig_text, text_color=TW, bgcolor=sig_color, text_size=SZ)
 
     // Confluence score toward next signal
-    best  = math.max(long_score, short_score)
-    s_dir = best == 0 ? "– " : long_score >= short_score ? "▲ " : "▼ "
-    s_txt = s_dir + str.tostring(best) + " / 4"
-    s_col = best == 4 ? color.new(color.lime, 10) : best == 3 ? C_BUY : best == 2 ? color.new(color.orange, 40) : C_WAIT
+    // Score is zeroed when EMA separation gate is blocking (ranging market) so the
+    // user is not misled by a high score that cannot produce a signal
+    best_raw = math.max(long_score, short_score)
+    best     = ema_sep_ok ? best_raw : 0
+    s_dir    = best == 0 ? "– " : long_score >= short_score ? "▲ " : "▼ "
+    s_txt    = ema_sep_ok ? s_dir + str.tostring(best) + " / 4" : "RANGING"
+    s_col    = not ema_sep_ok ? C_WAIT : best == 4 ? color.new(color.lime, 10) : best == 3 ? C_BUY : best == 2 ? color.new(color.orange, 40) : C_WAIT
     table.cell(dash, 0, 1, "SCORE",  text_color=TW, bgcolor=C_HEAD, text_size=SZ)
     table.cell(dash, 1, 1, s_txt,    text_color=TW, bgcolor=s_col,  text_size=SZ)
 

@@ -84,7 +84,7 @@ Two trigger types qualify. Either counts:
 | Row | What it shows |
 |---|---|
 | SIGNAL | Current signal (BUY / STRONG BUY / SELL / STRONG SELL / WAITING) |
-| SCORE | Current best confluence score (e.g. ▲ 3 / 4) |
+| SCORE | Current best confluence score (e.g. ▲ 3 / 4) — shows RANGING when the EMA separation gate is blocking signals |
 | TREND | EMA stack direction (BULL / BEAR / FLAT) |
 | STRENGTH | ADX value with pass/fail indicator |
 | KEY LVL | Whether price is near a previous day level |
@@ -152,7 +152,6 @@ Suggested scaling: take 40% off at TP1, 35% at TP2, hold 25% to TP3. After TP1 i
 ### Filters
 | Setting | Default | Description |
 |---|---|---|
-| Min Bars Between Signals | 4 | Cooldown bars after a signal fires |
 | Pivot Lookback/Forward | 5 | Bars used to confirm pivot highs and lows |
 | Enable Session Filter | Off | Restrict signals to a time window |
 | Active Session | 09:30–16:00 | Exchange-local session hours (used only if filter is enabled) |
