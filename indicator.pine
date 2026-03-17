@@ -2,7 +2,7 @@
 // © indicator
 
 //@version=6
-indicator("High Probability Intraday Setups", overlay=true, max_lines_count=500, max_labels_count=500, max_bars_back=500)
+indicator("1H Intraday Setups", overlay=true, max_lines_count=500, max_labels_count=500, max_bars_back=500)
 
 // ═══════════════════════════════════════════════════════════════
 // SECTION 1: INPUTS
@@ -59,14 +59,8 @@ ema_trend = ta.ema(close, i_ema_trend)
 [_di_plus, _di_minus, adx_val] = ta.dmi(i_adx_len, i_adx_len)
 adx_ok = adx_val >= i_adx_min
 
-// Higher-timeframe EMA bias (auto-selected, always one full step above current TF)
-htf_tf = timeframe.period == "1"  ? "5"   :
-         timeframe.period == "3"  ? "15"  :
-         timeframe.period == "5"  ? "15"  :
-         timeframe.period == "10" ? "30"  :
-         timeframe.period == "15" ? "60"  :
-         timeframe.period == "30" ? "60"  :
-         timeframe.period == "60" ? "240" : "D"
+// Higher-timeframe EMA bias — 1H chart uses 4H as HTF
+htf_tf = "240"
 
 htf_ema      = request.security(syminfo.tickerid, htf_tf, ta.ema(close, 50), lookahead=barmerge.lookahead_off)
 htf_slope_up = htf_ema > htf_ema[1]
@@ -110,33 +104,26 @@ if not na(ph)
 if not na(pl)
     last_pl_price := pl
 
-// 1H-specific auto-tuning: stricter body and wider proximity thresholds.
-// 1H candles carry a full hour of institutional activity — only the strongest
-// bodies qualify, and the EMA/structure zones need to be wider to match candle range.
-is_1h        = timeframe.period == "60"
-body_min     = is_1h ? 0.65 : 0.5
-pb_atr_tol   = is_1h ? 0.5  : 0.3
-bnc_atr_tol  = is_1h ? 0.75 : 0.5
-
-// Candle body strength: body must exceed body_min fraction of bar range
+// Candle body strength: body must be >65% of bar range — ensures only strong
+// directional 1H candles qualify, filtering out doji and wick-heavy bars
 body_pct    = c_range > 0 ? math.abs(close - open) / c_range : 0.0
-bull_candle = close > open and body_pct > body_min
-bear_candle = close < open and body_pct > body_min
+bull_candle = close > open and body_pct > 0.65
+bear_candle = close < open and body_pct > 0.65
 
 // EMA pullback: price touched EMA21 within last 4 bars, now bouncing above/below it
-// 4-bar window keeps it recent — 8 was too wide and fired well after the actual pullback
-ema_pb_bull = ta.lowest(low,   4) <= ema_slow + atr * pb_atr_tol and close > ema_slow and bull_candle
-ema_pb_bear = ta.highest(high, 4) >= ema_slow - atr * pb_atr_tol and close < ema_slow and bear_candle
+// 0.5 ATR tolerance accounts for the wider range of 1H candles overshooting the EMA
+ema_pb_bull = ta.lowest(low,   4) <= ema_slow + atr * 0.5 and close > ema_slow and bull_candle
+ema_pb_bear = ta.highest(high, 4) >= ema_slow - atr * 0.5 and close < ema_slow and bear_candle
 
-// Structure: named sub-conditions for clarity and Pine Script line-continuation compatibility.
-// Breakout uses crossover detection (close[1] <= pivot) so it fires only on the bar price
-// first crosses the pivot, not on every subsequent bar above it.
+// Structure: breakout uses crossover detection (close[1] <= pivot) so it fires only on the
+// bar price first crosses the pivot, not on every subsequent bar above it.
+// 0.75 ATR bounce zone accounts for 1H wicks probing deeper into S/R before rejection.
 str_bull_break  = bull_candle and not na(last_ph_price) and close > last_ph_price and close[1] <= last_ph_price
-str_bull_bounce = bull_candle and not na(last_pl_price) and low <= last_pl_price + atr * bnc_atr_tol and close > last_pl_price
+str_bull_bounce = bull_candle and not na(last_pl_price) and low <= last_pl_price + atr * 0.75 and close > last_pl_price
 str_bull        = str_bull_break or str_bull_bounce
 
 str_bear_break  = bear_candle and not na(last_pl_price) and close < last_pl_price and close[1] >= last_pl_price
-str_bear_bounce = bear_candle and not na(last_ph_price) and high >= last_ph_price - atr * bnc_atr_tol and close < last_ph_price
+str_bear_bounce = bear_candle and not na(last_ph_price) and high >= last_ph_price - atr * 0.75 and close < last_ph_price
 str_bear        = str_bear_break or str_bear_bounce
 
 // Either trigger type qualifies as the 4th confluence layer
