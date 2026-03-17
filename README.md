@@ -16,9 +16,11 @@ Requires a full EMA stack alignment plus 4H confirmation:
 
 - **EMA stack (bull):** EMA 9 > EMA 21 > EMA 50, and price is above EMA 50
 - **EMA stack (bear):** EMA 9 < EMA 21 < EMA 50, and price is below EMA 50
-- **4H bias:** The EMA 50 on the 4H chart must be sloping in the same direction
+- **4H bias:** Two conditions must both pass on the 4H chart:
+  1. The EMA 50 must be sloping in the same direction (compared across 3 bars, not 1, to avoid single-candle noise)
+  2. The 4H close must be on the correct side of the 4H EMA 50 — slope alone is not enough if price has already crossed back through the EMA
 
-The 4H is always used as the higher timeframe. If the 4H EMA 50 is not aligned with the 1H setup, the trend layer fails.
+The 4H is always used as the higher timeframe. If either 4H condition fails, the trend layer fails.
 
 ### Layer 2 — Momentum
 
@@ -135,7 +137,7 @@ Suggested scaling: take 40% off at TP1, 35% at TP2, hold 25% to TP3. After TP1 i
 ### Volume
 | Setting | Default | Description |
 |---|---|---|
-| Volume Spike (×avg) | 1.2 | Minimum volume multiple vs its moving average |
+| Volume Spike (×avg) | 1.5 | Minimum volume multiple vs its moving average |
 | Volume MA Length | 20 | Period for the volume moving average |
 
 ### Risk Management
@@ -198,7 +200,7 @@ All alerts are transition-based — they fire once when the signal appears, not 
 ## Key Design Decisions
 
 - **1H only** — all thresholds (body, ATR zones, HTF) are tuned specifically for hourly candles. Each 1H bar represents a full hour of institutional activity, producing cleaner signals with less noise than shorter timeframes.
-- **4H as HTF** — the 4H EMA 50 slope provides strong directional bias without being too laggy. A 1H setup against the 4H trend is a low-probability trade.
+- **4H as HTF** — the 4H EMA 50 provides directional bias via two checks: slope (compared over 3 bars to avoid single-candle flips) and price side (the 4H close must be above/below the 4H EMA 50). Slope alone can be misleading if price has already crossed back through the EMA mid-consolidation.
 - **Body 65%** — a 65%+ body on a 1H candle means the entire hour was directionally controlled. Doji and wick-heavy candles that pass a 50% threshold are excluded.
 - **3/4 threshold (not 4/4)** — requiring all 4 layers simultaneously is too restrictive for intraday use. 3/4 maintains quality while producing actionable frequency.
 - **1 signal per day** — suppresses follow-on signals within the same session. The first qualifying setup of the day on the 1H is typically the highest-probability one.

@@ -21,7 +21,7 @@ i_rsi_bull_hi = input.int(65,  "RSI Long Max",  minval=51, maxval=80, group="Mom
 i_rsi_bear_lo = input.int(35,  "RSI Short Min", minval=20, maxval=49, group="Momentum")
 
 // — Volume —
-i_vol_mult    = input.float(1.2, "Volume Spike (×avg)", minval=1.0, step=0.1, group="Volume")
+i_vol_mult    = input.float(1.5, "Volume Spike (×avg)", minval=1.0, step=0.1, group="Volume")
 i_vol_ma_len  = input.int(20,    "Volume MA Length",    minval=5,             group="Volume")
 
 // — Risk Management —
@@ -62,14 +62,20 @@ adx_ok = adx_val >= i_adx_min
 // Higher-timeframe EMA bias — 1H chart uses 4H as HTF
 htf_tf = "240"
 
-htf_ema      = request.security(syminfo.tickerid, htf_tf, ta.ema(close, 50), lookahead=barmerge.lookahead_off)
-htf_slope_up = htf_ema > htf_ema[1]
-htf_slope_dn = htf_ema < htf_ema[1]
+htf_ema      = request.security(syminfo.tickerid, htf_tf, ta.ema(close, 50),  lookahead=barmerge.lookahead_off)
+htf_close    = request.security(syminfo.tickerid, htf_tf, close,               lookahead=barmerge.lookahead_off)
+
+// Slope compared across 3 bars (not 1) — prevents a single 4H candle temporarily
+// flipping the HTF bias at the start or end of a consolidation
+htf_slope_up = htf_ema > htf_ema[3]
+htf_slope_dn = htf_ema < htf_ema[3]
 
 // Full EMA stack required (9 > 21 > 50 for bull, reverse for bear)
+// htf_close check ensures price is on the correct side of the 4H EMA50, not merely that
+// the 4H EMA50 is sloping the right way while price has already crossed back through it.
 // ADX gates the minimum required confluence score in Section 3 — trending markets allow 3/4, ranging require 4/4
-trend_bull = ema_fast > ema_slow and ema_slow > ema_trend and close > ema_trend and htf_slope_up
-trend_bear = ema_fast < ema_slow and ema_slow < ema_trend and close < ema_trend and htf_slope_dn
+trend_bull = ema_fast > ema_slow and ema_slow > ema_trend and close > ema_trend and htf_slope_up and htf_close > htf_ema
+trend_bear = ema_fast < ema_slow and ema_slow < ema_trend and close < ema_trend and htf_slope_dn and htf_close < htf_ema
 
 // ── 2c. Momentum: RSI sweet spot + MACD direction ────────────────
 rsi = ta.rsi(close, i_rsi_len)
