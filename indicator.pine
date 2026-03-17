@@ -67,11 +67,11 @@ htf_slope_up = htf_ema > htf_ema[1]
 htf_slope_dn = htf_ema < htf_ema[1]
 
 // Full EMA stack required (9 > 21 > 50 for bull, reverse for bear)
-// ADX is shown in the dashboard for context but not gating here — it was killing signal frequency
+// ADX gates the minimum required confluence score in Section 3 — trending markets allow 3/4, ranging require 4/4
 trend_bull = ema_fast > ema_slow and ema_slow > ema_trend and close > ema_trend and htf_slope_up
 trend_bear = ema_fast < ema_slow and ema_slow < ema_trend and close < ema_trend and htf_slope_dn
 
-// ── 2c. Momentum: RSI sweet spot + MACD acceleration ─────────────
+// ── 2c. Momentum: RSI sweet spot + MACD direction ────────────────
 rsi = ta.rsi(close, i_rsi_len)
 [_macd, _sig, hist] = ta.macd(close, 12, 26, 9)
 
@@ -277,7 +277,7 @@ var label lb_tp1   = na
 var label lb_tp2   = na
 var label lb_tp3   = na
 
-LINE_EXT = 60
+LINE_EXT = 60  // bars to extend SL/TP lines forward from the signal bar
 
 if i_show_lines and (valid_long or valid_short)
     line.delete(ln_entry)
