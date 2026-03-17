@@ -87,8 +87,9 @@ vol_spike = volume > vol_ma * i_vol_mult
 c_range  = high - low
 
 // Spike + candle direction: confirms volume is aligned with the move (lightweight, no division)
-vol_bull = vol_spike and close >= open
-vol_bear = vol_spike and close <= open
+// Strict inequality matches bull_candle/bear_candle — doji candles do not count as directional
+vol_bull = vol_spike and close > open
+vol_bear = vol_spike and close < open
 
 // ── 2e. Entry trigger: EMA pullback OR structure breakout ─────────
 
