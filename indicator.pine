@@ -41,6 +41,7 @@ i_show_emas   = input.bool(true,  "Show EMAs (21 + 50)",       group="Display")
 i_show_lines  = input.bool(true,  "Show SL/TP Lines",          group="Display")
 i_show_pdl    = input.bool(false, "Show Prev Day Levels",       group="Display")
 i_show_table  = input.bool(true,  "Show Signal Dashboard",      group="Display")
+i_show_ranging = input.bool(true, "Show Consolidation Zones",   group="Display")
 
 // ═══════════════════════════════════════════════════════════════
 // SECTION 2: CALCULATIONS
@@ -232,12 +233,19 @@ if timeframe.period != "60" and barstate.islast
 plot(i_show_emas ? ema_slow  : na, "EMA 21", color=color.new(color.blue,   15), linewidth=2)
 plot(i_show_emas ? ema_trend : na, "EMA 50", color=color.new(color.orange, 10), linewidth=2)
 
-// ── 4c. Previous day levels (off by default) ──────────────────────
+// ── 4c. Consolidation zone ────────────────────────────────────────
+// Shade bars gray when EMA 21 and EMA 50 are within 0.2 ATR of each other.
+// This is the same gate that blocks signals — the highlight shows the user
+// exactly which bars the indicator considered to be a ranging market.
+bgcolor(i_show_ranging and not ema_sep_ok ? color.new(color.gray, 82) : na,
+        title="Consolidation Zone")
+
+// ── 4d. Previous day levels (off by default) ──────────────────────
 plot(i_show_pdl ? pd_high  : na, "Prev Day High",  color=color.new(color.red,    40), linewidth=1, style=plot.style_stepline)
 plot(i_show_pdl ? pd_low   : na, "Prev Day Low",   color=color.new(color.teal,   40), linewidth=1, style=plot.style_stepline)
 plot(i_show_pdl ? pd_close : na, "Prev Day Close", color=color.new(color.yellow, 40), linewidth=1, style=plot.style_stepline)
 
-// ── 4d. Signal labels — large and unmissable ──────────────────────
+// ── 4e. Signal labels — large and unmissable ──────────────────────
 fmt(v) => str.tostring(v, format.mintick)
 
 if valid_long
@@ -305,7 +313,7 @@ if valid_short
               size=size.large,
               tooltip=tip)
 
-// ── 4e. SL / TP lines (one set, replaced on each new signal) ──────
+// ── 4f. SL / TP lines (one set, replaced on each new signal) ──────
 var line  ln_entry = na
 var line  ln_sl    = na
 var line  ln_tp1   = na
@@ -357,7 +365,7 @@ if i_show_lines and (valid_long or valid_short)
     lb_tp2   := label.new(x2, tp2_p, " TP2",   style=label.style_label_left, color=c_tp2, textcolor=color.black, size=size.small)
     lb_tp3   := label.new(x2, tp3_p, " TP3",   style=label.style_label_left, color=c_tp3, textcolor=color.black, size=size.small)
 
-// ── 4f. Keep lines extended as new bars print ─────────────────────
+// ── 4g. Keep lines extended as new bars print ─────────────────────
 if not na(ln_sl)
     line.set_x2(ln_entry, bar_index + LINE_EXT)
     line.set_x2(ln_sl,    bar_index + LINE_EXT)
@@ -370,7 +378,7 @@ if not na(ln_sl)
     label.set_x(lb_tp2,   bar_index + LINE_EXT)
     label.set_x(lb_tp3,   bar_index + LINE_EXT)
 
-// ── 4g. Signal dashboard (minimal — just what matters) ─────────────
+// ── 4h. Signal dashboard (minimal — just what matters) ─────────────
 var table dash = table.new(position.top_right, 2, 5,
                             bgcolor=color.new(color.black, 20),
                             border_color=color.new(color.gray, 60),
@@ -424,7 +432,7 @@ if i_show_table and barstate.islast
     table.cell(dash, 0, 4, "KEY LVL", text_color=TW,   bgcolor=C_HEAD, text_size=SZ)
     table.cell(dash, 1, 4, kl_txt,    text_color=kl_tc, bgcolor=kl_col, text_size=SZ)
 
-// ── 4h. Alerts ────────────────────────────────────────────────────
+// ── 4i. Alerts ────────────────────────────────────────────────────
 alertcondition(valid_long  and not valid_long[1],                  "BUY Signal",         "BUY — {{ticker}} {{interval}}")
 alertcondition(valid_short and not valid_short[1],                 "SELL Signal",        "SELL — {{ticker}} {{interval}}")
 alertcondition(valid_long  and at_key_level and not valid_long[1], "BUY at Key Level",   "BUY at key level — {{ticker}} {{interval}}")
