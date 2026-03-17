@@ -157,8 +157,14 @@ short_score = (trend_bear   ? 1 : 0) + (mom_bear  ? 1 : 0) + (vol_bear  ? 1 : 0)
 // In a ranging market (ADX < threshold) all 4 layers must agree — the setup needs to
 // be exceptionally strong to be worth trading against noise.
 min_score = adx_ok ? 3 : 4
-raw_long  = long_score  >= min_score and in_session
-raw_short = short_score >= min_score and in_session
+
+// EMA separation gate: when EMA 21 and EMA 50 are too close together the
+// market is ranging regardless of what ADX says. Require at least 0.2 ATR
+// of separation between them before any signal can fire.
+ema_sep_ok = math.abs(ema_slow - ema_trend) > atr * 0.2
+
+raw_long  = long_score  >= min_score and in_session and ema_sep_ok
+raw_short = short_score >= min_score and in_session and ema_sep_ok
 
 // ── 3b. Daily signal gate + cooldown (1 signal per day max) ─────
 // daily_used resets on each new calendar day; only the first qualifying
