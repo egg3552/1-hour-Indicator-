@@ -80,6 +80,8 @@ Two trigger types qualify. Either counts:
 
 **EMA lines** — EMA 21 (blue) and EMA 50 (orange) plotted on the chart.
 
+**Consolidation zone** — bars are shaded gray when EMA 21 and EMA 50 are within 0.2 ATR of each other. This is the exact condition that blocks signals, so the shading shows precisely where the indicator considered the market to be ranging. The zone clears as soon as the EMAs separate enough to permit signals again.
+
 **Dashboard** (top-right corner):
 
 | Row | What it shows |
@@ -164,6 +166,7 @@ Suggested scaling: take 40% off at TP1, 35% at TP2, hold 25% to TP3. After TP1 i
 | Show SL/TP Lines | On | Toggle entry/SL/TP lines |
 | Show Prev Day Levels | Off | Draw previous day H/L/C as step lines |
 | Show Signal Dashboard | On | Toggle the top-right dashboard table |
+| Show Consolidation Zones | On | Shade bars gray when EMA 21 and EMA 50 are within 0.2 ATR — matches the gate that blocks signals |
 
 ---
 
