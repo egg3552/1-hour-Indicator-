@@ -226,7 +226,11 @@ plot(i_show_pdl ? pd_close : na, "Prev Day Close", color=color.new(color.yellow,
 fmt(v) => str.tostring(v, format.mintick)
 
 if valid_long
-    long_type = not trigger_bull ? "Multi-Confluence" : ema_pb_bull ? "EMA Pullback" : "Structure Breakout"
+    long_type  = not trigger_bull ? "Multi-Confluence" : ema_pb_bull ? "EMA Pullback" : "Structure Breakout"
+    // Trailing stop: 1× ATR from signal bar. Activate after TP1 is reached — trails
+    // the position automatically to lock in profit while letting the runner continue.
+    trail_pts  = atr
+    trail_pct  = math.round((atr / close) * 100, 2)
     tip = "BUY — " + long_type + (at_key_level ? "  ★ KEY LEVEL" : "") + "\n" +
           "───────────────────\n" +
           "Entry   " + fmt(close)     + "\n" +
@@ -238,7 +242,11 @@ if valid_long
           "TP3  " + fmt(tp3_long) + "  (" + str.tostring(i_tp3_rr, "#.#") + "R)\n" +
           "───────────────────\n" +
           "Scale: 40% TP1 → 35% TP2 → 25% TP3\n" +
-          "Move SL to breakeven after TP1"
+          "Move SL to breakeven after TP1\n" +
+          "───────────────────\n" +
+          "Trailing Stop (activate at TP1)\n" +
+          "Trail dist  " + fmt(trail_pts) + " pts  (1× ATR)\n" +
+          "Trail %     " + str.tostring(trail_pct) + "%"
     lbl_col  = long_score == 4 ? color.new(color.lime, 0) : color.new(color.green, 20)
     lbl_base = long_score == 4 ? "STRONG BUY" : "BUY"
     lbl_text = lbl_base + (at_key_level ? " ★" : "") + "\n" + fmt(close)
@@ -252,6 +260,9 @@ if valid_long
 
 if valid_short
     short_type = not trigger_bear ? "Multi-Confluence" : ema_pb_bear ? "EMA Pullback" : "Structure Breakout"
+    // Trailing stop: 1× ATR from signal bar. Activate after TP1 is reached.
+    trail_pts  = atr
+    trail_pct  = math.round((atr / close) * 100, 2)
     tip = "SELL — " + short_type + (at_key_level ? "  ★ KEY LEVEL" : "") + "\n" +
           "───────────────────\n" +
           "Entry   " + fmt(close)      + "\n" +
@@ -263,7 +274,11 @@ if valid_short
           "TP3  " + fmt(tp3_short) + "  (" + str.tostring(i_tp3_rr, "#.#") + "R)\n" +
           "───────────────────\n" +
           "Scale: 40% TP1 → 35% TP2 → 25% TP3\n" +
-          "Move SL to breakeven after TP1"
+          "Move SL to breakeven after TP1\n" +
+          "───────────────────\n" +
+          "Trailing Stop (activate at TP1)\n" +
+          "Trail dist  " + fmt(trail_pts) + " pts  (1× ATR)\n" +
+          "Trail %     " + str.tostring(trail_pct) + "%"
     lbl_col  = short_score == 4 ? color.new(color.fuchsia, 0) : color.new(color.red, 20)
     lbl_base = short_score == 4 ? "STRONG SELL" : "SELL"
     lbl_text = lbl_base + (at_key_level ? " ★" : "") + "\n" + fmt(close)

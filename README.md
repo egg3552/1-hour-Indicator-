@@ -69,6 +69,7 @@ Two trigger types qualify. Either counts:
 - TP1, TP2, TP3 with their R:R ratios
 - Suggested scaling: 40% at TP1, 35% at TP2, 25% at TP3
 - Reminder to move SL to breakeven after TP1
+- **Trailing stop suggestion:** trail distance in points (1× ATR) and as a percentage — activate once TP1 is reached to automatically protect remaining open position
 
 **SL/TP lines** — drawn forward from the signal bar and extend as new bars print:
 - White dotted — Entry
