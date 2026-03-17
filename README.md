@@ -43,11 +43,28 @@ The higher timeframe is selected automatically based on the chart:
 
 Two trigger types qualify. Either counts:
 
-**EMA Pullback** — Price touched the EMA 21 within the last 4 bars and is now bouncing away from it with a conviction candle (body > 50% of bar range).
+**EMA Pullback** — Price touched the EMA 21 within the last 4 bars and is now bouncing away from it with a conviction candle.
 
 **Structure Breakout/Bounce:**
 - *Breakout:* Conviction candle closes above the last pivot high (for longs) or below the last pivot low (for shorts) — fires only on the first bar that crosses the level
-- *Bounce:* Conviction candle touches within 0.5 ATR of the last pivot low (for longs) or pivot high (for shorts) and closes beyond it
+- *Bounce:* Conviction candle touches within ATR proximity of the last pivot low (for longs) or pivot high (for shorts) and closes beyond it
+
+---
+
+## 1H Auto-Tuning
+
+When the chart is set to 1H, the indicator automatically applies stricter thresholds to match the characteristics of hourly candles. No manual adjustment needed.
+
+| Parameter | Other TFs | 1H |
+|---|---|---|
+| Candle body minimum | 50% of bar range | 65% of bar range |
+| EMA pullback proximity | 0.3 × ATR | 0.5 × ATR |
+| Structure bounce zone | 0.5 × ATR | 0.75 × ATR |
+
+**Why these values:**
+- **Body 65%** — A 1H candle spans a full hour of institutional activity. A 65%+ body means the entire hour was directionally controlled, not just a brief spike. At 50%, doji-like candles with large wicks can pass.
+- **EMA pullback 0.5 ATR** — 1H candles regularly overshoot EMA 21 before reversing. The 0.3 ATR tolerance used on shorter timeframes is too tight and misses valid pullbacks on the hourly.
+- **Structure bounce 0.75 ATR** — 1H wicks probe deeper into support and resistance before rejection. The wider zone ensures genuine bounces are captured rather than filtered out.
 
 ---
 
@@ -213,4 +230,5 @@ All alerts are transition-based — they fire once when the signal appears, not 
 - **ADX not in gate** — ADX measures trend strength but is slow-responding. Including it in the gate was eliminating valid momentum moves. It is displayed as context only.
 - **HTF bias via slope, not crossover** — the higher-timeframe EMA slope check is simple and fast, avoids look-ahead bias, and correctly captures trend direction without lag.
 - **Structure breakout crossover guard** — the breakout trigger (`close[1] <= pivot`) ensures the signal fires only on the first bar that crosses a pivot, not on every bar thereafter.
+- **1H auto-tuning** — thresholds for body strength, EMA pullback proximity, and structure bounce zone are automatically tightened on 1H without requiring any user input, since hourly candles have fundamentally different range and wick characteristics than 15m candles.
 # 1-hour-Indicator-
