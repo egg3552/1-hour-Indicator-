@@ -1,0 +1,397 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0
+// © indicator
+
+//@version=6
+indicator("High Probability Intraday Setups", overlay=true, max_lines_count=500, max_labels_count=500, max_bars_back=500)
+
+// ═══════════════════════════════════════════════════════════════
+// SECTION 1: INPUTS
+// ═══════════════════════════════════════════════════════════════
+
+// — Trend —
+i_ema_fast    = input.int(9,   "Fast EMA",                 minval=1,            group="Trend")
+i_ema_slow    = input.int(21,  "Slow EMA",                 minval=1,            group="Trend")
+i_ema_trend   = input.int(50,  "Trend EMA",                minval=1,            group="Trend")
+i_adx_len     = input.int(14,  "ADX Length",               minval=1,            group="Trend")
+i_adx_min     = input.int(20,  "Min ADX (trend strength)", minval=10, maxval=50, group="Trend")
+
+// — Momentum —
+i_rsi_len     = input.int(14,  "RSI Length",    minval=2,            group="Momentum")
+i_rsi_bull_hi = input.int(65,  "RSI Long Max",  minval=51, maxval=80, group="Momentum")
+i_rsi_bear_lo = input.int(35,  "RSI Short Min", minval=20, maxval=49, group="Momentum")
+
+// — Volume —
+i_vol_mult    = input.float(1.2, "Volume Spike (×avg)", minval=1.0, step=0.1, group="Volume")
+i_vol_ma_len  = input.int(20,    "Volume MA Length",    minval=5,             group="Volume")
+
+// — Risk Management —
+i_atr_len     = input.int(14,    "ATR Length",        minval=1,              group="Risk Management")
+i_sl_mult     = input.float(1.5, "SL ATR Multiplier", minval=0.5, step=0.1,  group="Risk Management")
+i_tp1_rr      = input.float(1.0, "TP1 R:R",           minval=0.5, step=0.25, group="Risk Management")
+i_tp2_rr      = input.float(2.0, "TP2 R:R",           minval=1.0, step=0.25, group="Risk Management")
+i_tp3_rr      = input.float(3.0, "TP3 R:R",           minval=1.5, step=0.25, group="Risk Management")
+
+// — Filters —
+i_cooldown    = input.int(4,     "Min Bars Between Signals", minval=1, group="Filters")
+i_pivot_lb    = input.int(5,     "Pivot Lookback/Forward",   minval=2, group="Filters")
+i_use_session = input.bool(false, "Enable Session Filter",              group="Filters")
+i_session     = input.session("0930-1600", "Active Session (exchange time)", group="Filters")
+
+// — Display —
+i_show_emas   = input.bool(true,  "Show EMAs (21 + 50)",       group="Display")
+i_show_lines  = input.bool(true,  "Show SL/TP Lines",          group="Display")
+i_show_pdl    = input.bool(false, "Show Prev Day Levels",       group="Display")
+i_show_table  = input.bool(true,  "Show Signal Dashboard",      group="Display")
+
+// ═══════════════════════════════════════════════════════════════
+// SECTION 2: CALCULATIONS
+// ═══════════════════════════════════════════════════════════════
+
+// ── 2a. ATR ──────────────────────────────────────────────────────
+atr = ta.atr(i_atr_len)
+
+// ── 2b. Trend: full EMA stack + ADX + HTF bias ──────────────────
+ema_fast  = ta.ema(close, i_ema_fast)
+ema_slow  = ta.ema(close, i_ema_slow)
+ema_trend = ta.ema(close, i_ema_trend)
+
+// ADX: confirms we are in a trend, not ranging
+[_di_plus, _di_minus, adx_val] = ta.dmi(i_adx_len, i_adx_len)
+adx_ok = adx_val >= i_adx_min
+
+// Higher-timeframe EMA bias (auto-selected, always one full step above current TF)
+htf_tf = timeframe.period == "1"  ? "5"   :
+         timeframe.period == "3"  ? "15"  :
+         timeframe.period == "5"  ? "15"  :
+         timeframe.period == "10" ? "30"  :
+         timeframe.period == "15" ? "60"  :
+         timeframe.period == "30" ? "60"  :
+         timeframe.period == "60" ? "240" : "D"
+
+htf_ema      = request.security(syminfo.tickerid, htf_tf, ta.ema(close, 50), lookahead=barmerge.lookahead_off)
+htf_slope_up = htf_ema > htf_ema[1]
+htf_slope_dn = htf_ema < htf_ema[1]
+
+// Full EMA stack required (9 > 21 > 50 for bull, reverse for bear)
+// ADX is shown in the dashboard for context but not gating here — it was killing signal frequency
+trend_bull = ema_fast > ema_slow and ema_slow > ema_trend and close > ema_trend and htf_slope_up
+trend_bear = ema_fast < ema_slow and ema_slow < ema_trend and close < ema_trend and htf_slope_dn
+
+// ── 2c. Momentum: RSI sweet spot + MACD acceleration ─────────────
+rsi = ta.rsi(close, i_rsi_len)
+[_macd, _sig, hist] = ta.macd(close, 12, 26, 9)
+
+// Long: RSI in bull zone + MACD histogram positive (direction confirmed — acceleration was over-filtering)
+mom_bull = rsi > 50 and rsi < i_rsi_bull_hi and hist > 0
+// Short: RSI in bear zone + MACD histogram negative
+mom_bear = rsi < 50 and rsi > i_rsi_bear_lo and hist < 0
+
+// ── 2d. Volume: spike + buying/selling pressure delta ────────────
+vol_ma    = ta.sma(volume, i_vol_ma_len)
+vol_spike = volume > vol_ma * i_vol_mult
+
+c_range  = high - low
+
+// Spike + candle direction: confirms volume is aligned with the move (lightweight, no division)
+vol_bull = vol_spike and close >= open
+vol_bear = vol_spike and close <= open
+
+// ── 2e. Entry trigger: EMA pullback OR structure breakout ─────────
+
+// Confirmed pivot highs/lows (price level only — no additional indexing)
+ph = ta.pivothigh(high, i_pivot_lb, i_pivot_lb)
+pl = ta.pivotlow(low,   i_pivot_lb, i_pivot_lb)
+
+var float last_ph_price = na
+var float last_pl_price = na
+
+if not na(ph)
+    last_ph_price := ph
+if not na(pl)
+    last_pl_price := pl
+
+// 1H-specific auto-tuning: stricter body and wider proximity thresholds.
+// 1H candles carry a full hour of institutional activity — only the strongest
+// bodies qualify, and the EMA/structure zones need to be wider to match candle range.
+is_1h        = timeframe.period == "60"
+body_min     = is_1h ? 0.65 : 0.5
+pb_atr_tol   = is_1h ? 0.5  : 0.3
+bnc_atr_tol  = is_1h ? 0.75 : 0.5
+
+// Candle body strength: body must exceed body_min fraction of bar range
+body_pct    = c_range > 0 ? math.abs(close - open) / c_range : 0.0
+bull_candle = close > open and body_pct > body_min
+bear_candle = close < open and body_pct > body_min
+
+// EMA pullback: price touched EMA21 within last 4 bars, now bouncing above/below it
+// 4-bar window keeps it recent — 8 was too wide and fired well after the actual pullback
+ema_pb_bull = ta.lowest(low,   4) <= ema_slow + atr * pb_atr_tol and close > ema_slow and bull_candle
+ema_pb_bear = ta.highest(high, 4) >= ema_slow - atr * pb_atr_tol and close < ema_slow and bear_candle
+
+// Structure: named sub-conditions for clarity and Pine Script line-continuation compatibility.
+// Breakout uses crossover detection (close[1] <= pivot) so it fires only on the bar price
+// first crosses the pivot, not on every subsequent bar above it.
+str_bull_break  = bull_candle and not na(last_ph_price) and close > last_ph_price and close[1] <= last_ph_price
+str_bull_bounce = bull_candle and not na(last_pl_price) and low <= last_pl_price + atr * bnc_atr_tol and close > last_pl_price
+str_bull        = str_bull_break or str_bull_bounce
+
+str_bear_break  = bear_candle and not na(last_pl_price) and close < last_pl_price and close[1] >= last_pl_price
+str_bear_bounce = bear_candle and not na(last_ph_price) and high >= last_ph_price - atr * bnc_atr_tol and close < last_ph_price
+str_bear        = str_bear_break or str_bear_bounce
+
+// Either trigger type qualifies as the 4th confluence layer
+trigger_bull = ema_pb_bull or str_bull
+trigger_bear = ema_pb_bear or str_bear
+
+// ── 2f. Session filter ────────────────────────────────────────────
+in_session = i_use_session ? not na(time(timeframe.period, i_session, syminfo.timezone)) : true
+
+// ── 2g. Previous day high / low / close (non-repainting) ─────────
+pd_high  = request.security(syminfo.tickerid, "D", high[1],  lookahead=barmerge.lookahead_on)
+pd_low   = request.security(syminfo.tickerid, "D", low[1],   lookahead=barmerge.lookahead_on)
+pd_close = request.security(syminfo.tickerid, "D", close[1], lookahead=barmerge.lookahead_on)
+
+// Signal is at a key daily level (within 0.5 ATR of PDH, PDL, or PDC)
+near_pdh = math.abs(close - pd_high)  < atr * 0.5
+near_pdl = math.abs(close - pd_low)   < atr * 0.5
+near_pdc = math.abs(close - pd_close) < atr * 0.5
+at_key_level = near_pdh or near_pdl or near_pdc
+
+// ═══════════════════════════════════════════════════════════════
+// SECTION 3: SIGNAL LOGIC
+// ═══════════════════════════════════════════════════════════════
+
+// ── 3a. Confluence scores ─────────────────────────────────────────
+long_score  = (trend_bull   ? 1 : 0) + (mom_bull  ? 1 : 0) + (vol_bull  ? 1 : 0) + (trigger_bull ? 1 : 0)
+short_score = (trend_bear   ? 1 : 0) + (mom_bear  ? 1 : 0) + (vol_bear  ? 1 : 0) + (trigger_bear ? 1 : 0)
+
+// 3/4 confluence = high probability signal; 4/4 = premium signal (labelled differently)
+raw_long  = long_score  >= 3 and in_session
+raw_short = short_score >= 3 and in_session
+
+// ── 3b. Daily signal gate + cooldown (1 signal per day max) ─────
+// daily_used resets on each new calendar day; only the first qualifying
+// signal of the day fires — subsequent setups that session are suppressed.
+var int  cooldown_bars = 0
+var bool daily_used   = false
+
+cooldown_bars := math.max(0, cooldown_bars - 1)
+
+if dayofmonth != dayofmonth[1] or month != month[1]
+    daily_used := false
+
+daily_ok = not daily_used
+
+valid_long  = raw_long  and cooldown_bars == 0 and daily_ok
+valid_short = raw_short and cooldown_bars == 0 and daily_ok
+
+if valid_long or valid_short
+    cooldown_bars := i_cooldown
+    daily_used    := true
+
+// ── 3c. SL / TP ───────────────────────────────────────────────────
+// Stop: wider of (recent structure extreme) vs (ATR-based minimum distance) — most conservative SL
+recent_low  = ta.lowest(low,  10)
+recent_high = ta.highest(high, 10)
+
+sl_long  = math.min(recent_low,  close - atr * i_sl_mult) - atr * 0.1
+sl_short = math.max(recent_high, close + atr * i_sl_mult) + atr * 0.1
+
+risk_long  = math.max(close - sl_long,  syminfo.mintick)
+risk_short = math.max(sl_short - close, syminfo.mintick)
+
+tp1_long  = close + risk_long  * i_tp1_rr
+tp2_long  = close + risk_long  * i_tp2_rr
+tp3_long  = close + risk_long  * i_tp3_rr
+
+tp1_short = close - risk_short * i_tp1_rr
+tp2_short = close - risk_short * i_tp2_rr
+tp3_short = close - risk_short * i_tp3_rr
+
+// ═══════════════════════════════════════════════════════════════
+// SECTION 4: VISUALS
+// ═══════════════════════════════════════════════════════════════
+
+// ── 4a. EMAs — only 21 and 50, no EMA9 clutter ────────────────────
+plot(i_show_emas ? ema_slow  : na, "EMA 21", color=color.new(color.blue,   15), linewidth=2)
+plot(i_show_emas ? ema_trend : na, "EMA 50", color=color.new(color.orange, 10), linewidth=2)
+
+// ── 4b. Previous day levels (off by default) ──────────────────────
+plot(i_show_pdl ? pd_high  : na, "Prev Day High",  color=color.new(color.red,    40), linewidth=1, style=plot.style_stepline)
+plot(i_show_pdl ? pd_low   : na, "Prev Day Low",   color=color.new(color.teal,   40), linewidth=1, style=plot.style_stepline)
+plot(i_show_pdl ? pd_close : na, "Prev Day Close", color=color.new(color.yellow, 40), linewidth=1, style=plot.style_stepline)
+
+// ── 4c. Signal labels — large and unmissable ──────────────────────
+fmt(v) => str.tostring(v, format.mintick)
+
+if valid_long
+    long_type = not trigger_bull ? "Multi-Confluence" : ema_pb_bull ? "EMA Pullback" : "Structure Breakout"
+    tip = "BUY — " + long_type + (at_key_level ? "  ★ KEY LEVEL" : "") + "\n" +
+          "───────────────────\n" +
+          "Entry   " + fmt(close)     + "\n" +
+          "Stop    " + fmt(sl_long)   + "\n" +
+          "Risk    " + fmt(risk_long) + " pts\n" +
+          "───────────────────\n" +
+          "TP1  " + fmt(tp1_long) + "  (" + str.tostring(i_tp1_rr, "#.#") + "R)\n" +
+          "TP2  " + fmt(tp2_long) + "  (" + str.tostring(i_tp2_rr, "#.#") + "R)\n" +
+          "TP3  " + fmt(tp3_long) + "  (" + str.tostring(i_tp3_rr, "#.#") + "R)\n" +
+          "───────────────────\n" +
+          "Scale: 40% TP1 → 35% TP2 → 25% TP3\n" +
+          "Move SL to breakeven after TP1"
+    lbl_col  = long_score == 4 ? color.new(color.lime, 0) : color.new(color.green, 20)
+    lbl_base = long_score == 4 ? "STRONG BUY" : "BUY"
+    lbl_text = lbl_base + (at_key_level ? " ★" : "") + "\n" + fmt(close)
+    label.new(bar_index, low - atr * 1.2,
+              lbl_text,
+              style=label.style_label_up,
+              color=lbl_col,
+              textcolor=color.white,
+              size=size.large,
+              tooltip=tip)
+
+if valid_short
+    short_type = not trigger_bear ? "Multi-Confluence" : ema_pb_bear ? "EMA Pullback" : "Structure Breakout"
+    tip = "SELL — " + short_type + (at_key_level ? "  ★ KEY LEVEL" : "") + "\n" +
+          "───────────────────\n" +
+          "Entry   " + fmt(close)      + "\n" +
+          "Stop    " + fmt(sl_short)   + "\n" +
+          "Risk    " + fmt(risk_short) + " pts\n" +
+          "───────────────────\n" +
+          "TP1  " + fmt(tp1_short) + "  (" + str.tostring(i_tp1_rr, "#.#") + "R)\n" +
+          "TP2  " + fmt(tp2_short) + "  (" + str.tostring(i_tp2_rr, "#.#") + "R)\n" +
+          "TP3  " + fmt(tp3_short) + "  (" + str.tostring(i_tp3_rr, "#.#") + "R)\n" +
+          "───────────────────\n" +
+          "Scale: 40% TP1 → 35% TP2 → 25% TP3\n" +
+          "Move SL to breakeven after TP1"
+    lbl_col  = short_score == 4 ? color.new(color.fuchsia, 0) : color.new(color.red, 20)
+    lbl_base = short_score == 4 ? "STRONG SELL" : "SELL"
+    lbl_text = lbl_base + (at_key_level ? " ★" : "") + "\n" + fmt(close)
+    label.new(bar_index, high + atr * 1.2,
+              lbl_text,
+              style=label.style_label_down,
+              color=lbl_col,
+              textcolor=color.white,
+              size=size.large,
+              tooltip=tip)
+
+// ── 4d. SL / TP lines (one set, replaced on each new signal) ──────
+var line  ln_entry = na
+var line  ln_sl    = na
+var line  ln_tp1   = na
+var line  ln_tp2   = na
+var line  ln_tp3   = na
+var label lb_entry = na
+var label lb_sl    = na
+var label lb_tp1   = na
+var label lb_tp2   = na
+var label lb_tp3   = na
+
+LINE_EXT = 60
+
+if i_show_lines and (valid_long or valid_short)
+    line.delete(ln_entry)
+    line.delete(ln_sl)
+    line.delete(ln_tp1)
+    line.delete(ln_tp2)
+    line.delete(ln_tp3)
+    label.delete(lb_entry)
+    label.delete(lb_sl)
+    label.delete(lb_tp1)
+    label.delete(lb_tp2)
+    label.delete(lb_tp3)
+
+    is_long = valid_long
+    sl_p    = is_long ? sl_long  : sl_short
+    tp1_p   = is_long ? tp1_long : tp1_short
+    tp2_p   = is_long ? tp2_long : tp2_short
+    tp3_p   = is_long ? tp3_long : tp3_short
+
+    c_en  = color.new(color.white,  30)
+    c_sl  = color.new(color.red,     0)
+    c_tp1 = color.new(color.yellow,  0)
+    c_tp2 = color.new(color.orange,  0)
+    c_tp3 = color.new(color.lime,    0)
+    x1    = bar_index
+    x2    = bar_index + LINE_EXT
+
+    ln_entry := line.new(x1, close, x2, close, color=c_en,  style=line.style_dotted, width=1)
+    ln_sl    := line.new(x1, sl_p,  x2, sl_p,  color=c_sl,  style=line.style_dashed, width=2)
+    ln_tp1   := line.new(x1, tp1_p, x2, tp1_p, color=c_tp1, style=line.style_solid,  width=1)
+    ln_tp2   := line.new(x1, tp2_p, x2, tp2_p, color=c_tp2, style=line.style_solid,  width=1)
+    ln_tp3   := line.new(x1, tp3_p, x2, tp3_p, color=c_tp3, style=line.style_solid,  width=1)
+
+    lb_entry := label.new(x2, close, " Entry", style=label.style_label_left, color=c_en,  textcolor=color.white, size=size.small)
+    lb_sl    := label.new(x2, sl_p,  " SL",    style=label.style_label_left, color=c_sl,  textcolor=color.white, size=size.small)
+    lb_tp1   := label.new(x2, tp1_p, " TP1",   style=label.style_label_left, color=c_tp1, textcolor=color.black, size=size.small)
+    lb_tp2   := label.new(x2, tp2_p, " TP2",   style=label.style_label_left, color=c_tp2, textcolor=color.black, size=size.small)
+    lb_tp3   := label.new(x2, tp3_p, " TP3",   style=label.style_label_left, color=c_tp3, textcolor=color.black, size=size.small)
+
+// ── 4e. Keep lines extended as new bars print ─────────────────────
+if not na(ln_sl)
+    line.set_x2(ln_entry, bar_index + LINE_EXT)
+    line.set_x2(ln_sl,    bar_index + LINE_EXT)
+    line.set_x2(ln_tp1,   bar_index + LINE_EXT)
+    line.set_x2(ln_tp2,   bar_index + LINE_EXT)
+    line.set_x2(ln_tp3,   bar_index + LINE_EXT)
+    label.set_x(lb_entry, bar_index + LINE_EXT)
+    label.set_x(lb_sl,    bar_index + LINE_EXT)
+    label.set_x(lb_tp1,   bar_index + LINE_EXT)
+    label.set_x(lb_tp2,   bar_index + LINE_EXT)
+    label.set_x(lb_tp3,   bar_index + LINE_EXT)
+
+// ── 4f. Signal dashboard (minimal — just what matters) ─────────────
+var table dash = table.new(position.top_right, 2, 5,
+                            bgcolor=color.new(color.black, 20),
+                            border_color=color.new(color.gray, 60),
+                            border_width=1,
+                            frame_color=color.new(color.gray, 40),
+                            frame_width=1)
+
+if i_show_table and barstate.islast
+    C_BUY  = color.new(color.green,  15)
+    C_SELL = color.new(color.red,    15)
+    C_WAIT = color.new(color.gray,   50)
+    C_HEAD = color.new(color.black,  20)
+    TW     = color.white
+    SZ     = size.normal
+
+    // Signal — the only thing the user actually needs to act on
+    sig_long  = long_score  == 4 ? "▲  STRONG BUY"  : "▲  BUY"
+    sig_short = short_score == 4 ? "▼  STRONG SELL" : "▼  SELL"
+    sig_text  = valid_long ? sig_long : valid_short ? sig_short : "WAITING"
+    sig_color = valid_long  ? C_BUY : valid_short ? C_SELL : C_WAIT
+    table.cell(dash, 0, 0, "SIGNAL", text_color=TW, bgcolor=C_HEAD, text_size=SZ)
+    table.cell(dash, 1, 0, sig_text, text_color=TW, bgcolor=sig_color, text_size=SZ)
+
+    // Confluence score toward next signal
+    best  = math.max(long_score, short_score)
+    s_dir = best == 0 ? "– " : long_score >= short_score ? "▲ " : "▼ "
+    s_txt = s_dir + str.tostring(best) + " / 4"
+    s_col = best == 4 ? color.new(color.lime, 10) : best == 3 ? C_BUY : best == 2 ? color.new(color.orange, 40) : C_WAIT
+    table.cell(dash, 0, 1, "SCORE",  text_color=TW, bgcolor=C_HEAD, text_size=SZ)
+    table.cell(dash, 1, 1, s_txt,    text_color=TW, bgcolor=s_col,  text_size=SZ)
+
+    // Trend direction
+    t_txt = trend_bull ? "▲ BULL" : trend_bear ? "▼ BEAR" : "FLAT"
+    t_col = trend_bull ? C_BUY   : trend_bear ? C_SELL   : C_WAIT
+    table.cell(dash, 0, 2, "TREND",  text_color=TW, bgcolor=C_HEAD, text_size=SZ)
+    table.cell(dash, 1, 2, t_txt,    text_color=TW, bgcolor=t_col,  text_size=SZ)
+
+    // ADX — trend strength
+    adx_txt = "ADX  " + str.tostring(math.round(adx_val, 1)) + (adx_ok ? "  ✓" : "  ✗")
+    adx_col = adx_ok ? C_BUY : C_WAIT
+    table.cell(dash, 0, 3, "STRENGTH", text_color=TW, bgcolor=C_HEAD, text_size=SZ)
+    table.cell(dash, 1, 3, adx_txt,    text_color=TW, bgcolor=adx_col, text_size=SZ)
+
+    // Key level flag
+    kl_txt = at_key_level ? (near_pdh ? "★ Near PDH" : near_pdl ? "★ Near PDL" : "★ Near PDC") : "–"
+    kl_col = at_key_level ? color.new(color.yellow, 15) : C_WAIT
+    kl_tc  = at_key_level ? color.black : TW
+    table.cell(dash, 0, 4, "KEY LVL", text_color=TW,   bgcolor=C_HEAD, text_size=SZ)
+    table.cell(dash, 1, 4, kl_txt,    text_color=kl_tc, bgcolor=kl_col, text_size=SZ)
+
+// ── 4g. Alerts ────────────────────────────────────────────────────
+alertcondition(valid_long  and not valid_long[1],                  "BUY Signal",         "BUY — {{ticker}} {{interval}}")
+alertcondition(valid_short and not valid_short[1],                 "SELL Signal",        "SELL — {{ticker}} {{interval}}")
+alertcondition(valid_long  and at_key_level and not valid_long[1], "BUY at Key Level",   "BUY at key level — {{ticker}} {{interval}}")
+alertcondition(valid_short and at_key_level and not valid_short[1],"SELL at Key Level",  "SELL at key level — {{ticker}} {{interval}}")
