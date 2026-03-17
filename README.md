@@ -208,3 +208,35 @@ All alerts are transition-based — they fire once when the signal appears, not 
 - **ADX dynamic threshold** — ADX gates the minimum required confluence score rather than being a binary pass/fail. In trending conditions (ADX ≥ threshold) a 3/4 score is sufficient; in weak-trend conditions (ADX < threshold) all 4 layers must agree. This avoids eliminating valid momentum moves while still raising the bar in low-conviction environments.
 - **EMA separation gate** — when EMA 21 and EMA 50 are within 0.2 ATR of each other the market is ranging, regardless of what ADX reports (ADX can stay elevated from a prior trend while price consolidates). No signal fires until the EMAs separate enough to confirm a genuine directional move.
 - **Structure breakout crossover guard** — the breakout trigger (`close[1] <= pivot`) ensures the signal fires only on the first bar that crosses a pivot, not on every bar thereafter.
+
+---
+
+## Recommended Assets
+
+This indicator is designed for **forex major pairs**. The recommended starting point is **EURUSD**.
+
+### Why forex majors
+
+- **Clean trending behaviour** — majors trend well and respect EMA structures more reliably than indices or crypto, which whipsaw more aggressively
+- **Consistent volume patterns** — volume spikes (1.5× average) are meaningful during London and New York sessions, which align naturally with the session filter
+- **ATR-based levels work well** — major pairs have predictable volatility on the 1H, so 1.5× ATR stops and 1–3R targets are realistic without being too tight or too wide
+- **4H EMA50 alignment is reliable** — institutional participants actively respect higher timeframe EMA levels on major pairs
+
+### Why EURUSD specifically
+
+- Highest liquidity of any forex pair = cleanest price action
+- Strong institutional participation = volume spikes are meaningful, not noise
+- Trends clearly during the London/New York overlap (the prime 1H window)
+- ADX readings are reliable — ranging vs trending is easier to distinguish than on thinner instruments
+
+### What to avoid
+
+| Asset class | Why it underperforms |
+|---|---|
+| **Crypto** | 24/7 trading weakens the daily gate logic; extreme volatility makes ATR stops very wide; volume spikes are less institutionally driven |
+| **Individual stocks** | Earnings, gaps, and thin liquidity produce false breakouts that bypass the confluence filters |
+| **Indices (SPX, NQ)** | Tend to grind rather than trend cleanly on 1H; gap behaviour at open creates misleading structure breakouts |
+
+### Recommended session filter setting
+
+Enable the session filter and set it to **12:00–16:00 UTC** to isolate the London/New York overlap — the highest-liquidity window of the trading day and where the strongest 1H moves originate.
