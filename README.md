@@ -17,7 +17,7 @@ Requires a full EMA stack alignment plus 4H confirmation:
 - **EMA stack (bull):** EMA 9 > EMA 21 > EMA 50, and price is above EMA 50
 - **EMA stack (bear):** EMA 9 < EMA 21 < EMA 50, and price is below EMA 50
 - **4H bias:** Two conditions must both pass on the 4H chart:
-  1. The EMA 50 must be sloping in the same direction (compared across 3 bars, not 1, to avoid single-candle noise)
+  1. The EMA 50 must be sloping in the same direction (compared one full 4H period back — 4 bars on the 1H chart — to avoid a single indecisive 4H candle flipping the bias)
   2. The 4H close must be on the correct side of the 4H EMA 50 — slope alone is not enough if price has already crossed back through the EMA
 
 The 4H is always used as the higher timeframe. If either 4H condition fails, the trend layer fails.
@@ -29,7 +29,7 @@ The 4H is always used as the higher timeframe. If either 4H condition fails, the
 
 ### Layer 3 — Volume
 
-- Volume must exceed 1.2× its 20-bar average (confirmed spike)
+- Volume must exceed 1.5× its 20-bar average (confirmed spike)
 - Candle direction must align with the signal: bullish candle for longs, bearish candle for shorts
 
 ### Layer 4 — Entry Trigger
@@ -125,8 +125,8 @@ Suggested scaling: take 40% off at TP1, 35% at TP2, hold 25% to TP3. After TP1 i
 | Fast EMA | 9 | Short-term EMA period |
 | Slow EMA | 21 | Mid-term EMA period (also used for pullback detection) |
 | Trend EMA | 50 | Long-term EMA period |
-| ADX Length | 14 | Period for ADX calculation (displayed only, not a gate) |
-| Min ADX | 20 | ADX threshold shown in dashboard ✓/✗ |
+| ADX Length | 14 | Period for ADX calculation |
+| Min ADX | 20 | ADX threshold — when ADX ≥ this value signals require 3/4 layers; below it requires 4/4 |
 
 ### Momentum
 | Setting | Default | Description |
@@ -192,15 +192,16 @@ All alerts are transition-based — they fire once when the signal appears, not 
 6. Place your stop at the SL level
 7. Scale out: 40% at TP1, 35% at TP2, 25% at TP3
 8. Move SL to breakeven once TP1 is reached
+9. Activate a trailing stop (settings in the tooltip) to automatically protect the remaining position
 
-**Note:** ADX is shown in the dashboard for context but does not gate signals. Use it as a secondary confirmation — an ADX ✓ alongside a 4/4 STRONG signal is the highest-conviction setup.
+**Note:** ADX controls the minimum confluence threshold — when ADX ✓ the indicator requires 3/4 layers; when ADX ✗ it requires 4/4. A 4/4 STRONG signal with ADX ✓ is the highest-conviction setup.
 
 ---
 
 ## Key Design Decisions
 
 - **1H only** — all thresholds (body, ATR zones, HTF) are tuned specifically for hourly candles. Each 1H bar represents a full hour of institutional activity, producing cleaner signals with less noise than shorter timeframes.
-- **4H as HTF** — the 4H EMA 50 provides directional bias via two checks: slope (compared over 3 bars to avoid single-candle flips) and price side (the 4H close must be above/below the 4H EMA 50). Slope alone can be misleading if price has already crossed back through the EMA mid-consolidation.
+- **4H as HTF** — the 4H EMA 50 provides directional bias via two checks: slope (compared one full 4H period back to avoid single-candle flips) and price side (the 4H close must be above/below the 4H EMA 50). Slope alone can be misleading if price has already crossed back through the EMA mid-consolidation.
 - **Body 65%** — a 65%+ body on a 1H candle means the entire hour was directionally controlled. Doji and wick-heavy candles that pass a 50% threshold are excluded.
 - **3/4 threshold (not 4/4)** — requiring all 4 layers simultaneously is too restrictive for intraday use. 3/4 maintains quality while producing actionable frequency.
 - **1 signal per day** — suppresses follow-on signals within the same session. The first qualifying setup of the day on the 1H is typically the highest-probability one.

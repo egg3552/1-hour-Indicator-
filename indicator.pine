@@ -82,12 +82,12 @@ trend_bear = ema_fast < ema_slow and ema_slow < ema_trend and close < ema_trend 
 rsi = ta.rsi(close, i_rsi_len)
 [_macd, _sig, hist] = ta.macd(close, 12, 26, 9)
 
-// Long: RSI in bull zone + MACD histogram positive (direction confirmed — acceleration was over-filtering)
+// Long: RSI above midline but below overbought ceiling + MACD histogram positive
 mom_bull = rsi > 50 and rsi < i_rsi_bull_hi and hist > 0
-// Short: RSI in bear zone + MACD histogram negative
+// Short: RSI below midline but above oversold floor + MACD histogram negative
 mom_bear = rsi < 50 and rsi > i_rsi_bear_lo and hist < 0
 
-// ── 2d. Volume: spike + buying/selling pressure delta ────────────
+// ── 2d. Volume: spike + directional candle alignment ─────────────
 vol_ma    = ta.sma(volume, i_vol_ma_len)
 vol_spike = volume > vol_ma * i_vol_mult
 
@@ -142,6 +142,9 @@ trigger_bear = ema_pb_bear or str_bear
 in_session = i_use_session ? not na(time(timeframe.period, i_session, syminfo.timezone)) : true
 
 // ── 2g. Previous day high / low / close (non-repainting) ─────────
+// lookahead_on with [1] is the correct non-repainting pattern for daily levels:
+// [1] shifts to the prior day's bar, and lookahead_on delivers it at the start
+// of the current day so the levels are visible from bar 1 of each new session.
 pd_high  = request.security(syminfo.tickerid, "D", high[1],  lookahead=barmerge.lookahead_on)
 pd_low   = request.security(syminfo.tickerid, "D", low[1],   lookahead=barmerge.lookahead_on)
 pd_close = request.security(syminfo.tickerid, "D", close[1], lookahead=barmerge.lookahead_on)
@@ -246,7 +249,7 @@ if valid_long
           "───────────────────\n" +
           "Trailing Stop (activate at TP1)\n" +
           "Trail dist  " + fmt(trail_pts) + " pts  (1× ATR)\n" +
-          "Trail %     " + str.tostring(trail_pct) + "%"
+          "Trail %     " + str.tostring(trail_pct, "#.##") + "%"
     lbl_col  = long_score == 4 ? color.new(color.lime, 0) : color.new(color.green, 20)
     lbl_base = long_score == 4 ? "STRONG BUY" : "BUY"
     lbl_text = lbl_base + (at_key_level ? " ★" : "") + "\n" + fmt(close)
@@ -278,7 +281,7 @@ if valid_short
           "───────────────────\n" +
           "Trailing Stop (activate at TP1)\n" +
           "Trail dist  " + fmt(trail_pts) + " pts  (1× ATR)\n" +
-          "Trail %     " + str.tostring(trail_pct) + "%"
+          "Trail %     " + str.tostring(trail_pct, "#.##") + "%"
     lbl_col  = short_score == 4 ? color.new(color.fuchsia, 0) : color.new(color.red, 20)
     lbl_base = short_score == 4 ? "STRONG SELL" : "SELL"
     lbl_text = lbl_base + (at_key_level ? " ★" : "") + "\n" + fmt(close)
