@@ -41,7 +41,8 @@ i_show_emas   = input.bool(true,  "Show EMAs (21 + 50)",       group="Display")
 i_show_lines  = input.bool(true,  "Show SL/TP Lines",          group="Display")
 i_show_pdl    = input.bool(false, "Show Prev Day Levels",       group="Display")
 i_show_table  = input.bool(true,  "Show Signal Dashboard",      group="Display")
-i_show_ranging = input.bool(true, "Show Consolidation Zones",   group="Display")
+i_show_ranging   = input.bool(true, "Show Consolidation Zones",   group="Display")
+i_show_near_miss = input.bool(true, "Show Near-Miss Dots (3/4)",  group="Display")
 
 // ═══════════════════════════════════════════════════════════════
 // SECTION 2: CALCULATIONS
@@ -83,10 +84,10 @@ trend_bear = ema_fast < ema_slow and ema_slow < ema_trend and close < ema_trend 
 rsi = ta.rsi(close, i_rsi_len)
 [_macd, _sig, hist] = ta.macd(close, 12, 26, 9)
 
-// Long: RSI above midline but below overbought ceiling + MACD histogram positive
-mom_bull = rsi > 50 and rsi < i_rsi_bull_hi and hist > 0
-// Short: RSI below midline but above oversold floor + MACD histogram negative
-mom_bear = rsi < 50 and rsi > i_rsi_bear_lo and hist < 0
+// Long: RSI above midline but below overbought ceiling + MACD histogram positive and accelerating
+mom_bull = rsi > 50 and rsi < i_rsi_bull_hi and hist > 0 and hist > hist[1]
+// Short: RSI below midline but above oversold floor + MACD histogram negative and accelerating
+mom_bear = rsi < 50 and rsi > i_rsi_bear_lo and hist < 0 and hist < hist[1]
 
 // ── 2d. Volume: spike + directional candle alignment ─────────────
 vol_ma    = ta.sma(volume, i_vol_ma_len)
@@ -107,11 +108,15 @@ pl = ta.pivotlow(low,   i_pivot_lb, i_pivot_lb)
 
 var float last_ph_price = na
 var float last_pl_price = na
+var int   last_ph_bar   = na
+var int   last_pl_bar   = na
 
 if not na(ph)
     last_ph_price := ph
+    last_ph_bar   := bar_index
 if not na(pl)
     last_pl_price := pl
+    last_pl_bar   := bar_index
 
 // Candle body strength: body must be >65% of bar range — ensures only strong
 // directional 1H candles qualify, filtering out doji and wick-heavy bars
@@ -128,11 +133,11 @@ ema_pb_bear = ta.highest(high, 4) >= ema_slow - atr * 0.5 and close < ema_slow a
 // bar price first crosses the pivot, not on every subsequent bar above it.
 // 0.75 ATR bounce zone accounts for 1H wicks probing deeper into S/R before rejection.
 str_bull_break  = bull_candle and not na(last_ph_price) and close > last_ph_price and close[1] <= last_ph_price
-str_bull_bounce = bull_candle and not na(last_pl_price) and low <= last_pl_price + atr * 0.75 and close > last_pl_price
+str_bull_bounce = bull_candle and not na(last_pl_price) and not na(last_pl_bar) and bar_index - last_pl_bar <= 20 and low <= last_pl_price + atr * 0.75 and close > last_pl_price
 str_bull        = str_bull_break or str_bull_bounce
 
 str_bear_break  = bear_candle and not na(last_pl_price) and close < last_pl_price and close[1] >= last_pl_price
-str_bear_bounce = bear_candle and not na(last_ph_price) and high >= last_ph_price - atr * 0.75 and close < last_ph_price
+str_bear_bounce = bear_candle and not na(last_ph_price) and not na(last_ph_bar) and bar_index - last_ph_bar <= 20 and high >= last_ph_price - atr * 0.75 and close < last_ph_price
 str_bear        = str_bear_break or str_bear_bounce
 
 // Either trigger type qualifies as the 4th confluence layer
@@ -220,14 +225,16 @@ tp3_short = close - risk_short * i_tp3_rr
 // ── 4a. Timeframe guard ───────────────────────────────────────────
 // All thresholds are tuned for 1H candles. Warn the user if the indicator
 // is loaded on any other timeframe where signals would be miscalibrated.
-// barstate.islast ensures only one label is created — not one per bar.
+// var + delete prevents label accumulation across real-time bar updates.
+var label warn_lbl = na
 if timeframe.period != "60" and barstate.islast
-    label.new(bar_index, high,
-              "⚠ This indicator is built for the 1H chart only.\nSignals on other timeframes are not valid.",
-              style=label.style_label_down,
-              color=color.red,
-              textcolor=color.white,
-              size=size.normal)
+    label.delete(warn_lbl)
+    warn_lbl := label.new(bar_index, high,
+                          "⚠ This indicator is built for the 1H chart only.\nSignals on other timeframes are not valid.",
+                          style=label.style_label_down,
+                          color=color.red,
+                          textcolor=color.white,
+                          size=size.normal)
 
 // ── 4b. EMAs — only 21 and 50, no EMA9 clutter ────────────────────
 plot(i_show_emas ? ema_slow  : na, "EMA 21", color=color.new(color.blue,   15), linewidth=2)
@@ -240,12 +247,20 @@ plot(i_show_emas ? ema_trend : na, "EMA 50", color=color.new(color.orange, 10), 
 bgcolor(i_show_ranging and not ema_sep_ok ? color.new(color.gray, 82) : na,
         title="Consolidation Zone")
 
-// ── 4d. Previous day levels (off by default) ──────────────────────
+// ── 4d. Near-miss dots — 3/4 confluence, signal did not fire ─────
+// Fires when score is 3 but signal is blocked (ranging market requires 4/4,
+// or daily signal already used). Helps users see setups that almost triggered.
+near_miss_long  = long_score  == 3 and not valid_long  and ema_sep_ok and in_session
+near_miss_short = short_score == 3 and not valid_short and ema_sep_ok and in_session
+plotchar(i_show_near_miss and near_miss_long  ? 1 : na, "Near Miss Long",  "●", location.belowbar, color.new(color.green, 40), size=size.tiny)
+plotchar(i_show_near_miss and near_miss_short ? 1 : na, "Near Miss Short", "●", location.abovebar, color.new(color.red,   40), size=size.tiny)
+
+// ── 4e. Previous day levels (off by default) ──────────────────────
 plot(i_show_pdl ? pd_high  : na, "Prev Day High",  color=color.new(color.red,    40), linewidth=1, style=plot.style_stepline)
 plot(i_show_pdl ? pd_low   : na, "Prev Day Low",   color=color.new(color.teal,   40), linewidth=1, style=plot.style_stepline)
 plot(i_show_pdl ? pd_close : na, "Prev Day Close", color=color.new(color.yellow, 40), linewidth=1, style=plot.style_stepline)
 
-// ── 4e. Signal labels — large and unmissable ──────────────────────
+// ── 4f. Signal labels — large and unmissable ──────────────────────
 fmt(v) => str.tostring(v, format.mintick)
 
 if valid_long
@@ -313,7 +328,7 @@ if valid_short
               size=size.large,
               tooltip=tip)
 
-// ── 4f. SL / TP lines (one set, replaced on each new signal) ──────
+// ── 4g. SL / TP lines (one set, replaced on each new signal) ──────
 var line  ln_entry = na
 var line  ln_sl    = na
 var line  ln_tp1   = na
@@ -365,7 +380,7 @@ if i_show_lines and (valid_long or valid_short)
     lb_tp2   := label.new(x2, tp2_p, " TP2",   style=label.style_label_left, color=c_tp2, textcolor=color.black, size=size.small)
     lb_tp3   := label.new(x2, tp3_p, " TP3",   style=label.style_label_left, color=c_tp3, textcolor=color.black, size=size.small)
 
-// ── 4g. Keep lines extended as new bars print ─────────────────────
+// ── 4h. Keep lines extended as new bars print ─────────────────────
 if not na(ln_sl)
     line.set_x2(ln_entry, bar_index + LINE_EXT)
     line.set_x2(ln_sl,    bar_index + LINE_EXT)
@@ -378,7 +393,7 @@ if not na(ln_sl)
     label.set_x(lb_tp2,   bar_index + LINE_EXT)
     label.set_x(lb_tp3,   bar_index + LINE_EXT)
 
-// ── 4h. Signal dashboard (minimal — just what matters) ─────────────
+// ── 4i. Signal dashboard (minimal — just what matters) ─────────────
 var table dash = table.new(position.top_right, 2, 5,
                             bgcolor=color.new(color.black, 20),
                             border_color=color.new(color.gray, 60),
@@ -432,8 +447,8 @@ if i_show_table and barstate.islast
     table.cell(dash, 0, 4, "KEY LVL", text_color=TW,   bgcolor=C_HEAD, text_size=SZ)
     table.cell(dash, 1, 4, kl_txt,    text_color=kl_tc, bgcolor=kl_col, text_size=SZ)
 
-// ── 4i. Alerts ────────────────────────────────────────────────────
-alertcondition(valid_long  and not valid_long[1],                  "BUY Signal",         "BUY — {{ticker}} {{interval}}")
-alertcondition(valid_short and not valid_short[1],                 "SELL Signal",        "SELL — {{ticker}} {{interval}}")
-alertcondition(valid_long  and at_key_level and not valid_long[1], "BUY at Key Level",   "BUY at key level — {{ticker}} {{interval}}")
-alertcondition(valid_short and at_key_level and not valid_short[1],"SELL at Key Level",  "SELL at key level — {{ticker}} {{interval}}")
+// ── 4j. Alerts ────────────────────────────────────────────────────
+alertcondition(valid_long,                    "BUY Signal",        "BUY — {{ticker}} {{interval}}")
+alertcondition(valid_short,                   "SELL Signal",       "SELL — {{ticker}} {{interval}}")
+alertcondition(valid_long  and at_key_level,  "BUY at Key Level",  "BUY at key level — {{ticker}} {{interval}}")
+alertcondition(valid_short and at_key_level,  "SELL at Key Level", "SELL at key level — {{ticker}} {{interval}}")
