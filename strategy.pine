@@ -3,11 +3,12 @@
 
 //@version=6
 strategy("1H Intraday Setups — Backtest", overlay=true,
-         default_qty_type  = strategy.percent_of_equity,
-         default_qty_value = 10,
-         max_bars_back     = 500,
-         max_lines_count   = 500,
-         max_labels_count  = 500)
+         default_qty_type        = strategy.percent_of_equity,
+         default_qty_value       = 10,
+         process_orders_on_close = true,
+         max_bars_back           = 500,
+         max_lines_count         = 500,
+         max_labels_count        = 500)
 
 // ═══════════════════════════════════════════════════════════════
 // SECTION 1: INPUTS (identical to indicator)
