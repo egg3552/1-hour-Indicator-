@@ -32,7 +32,9 @@ i_vol_ma_len  = input.int(20,    "Volume MA Length",    minval=5,             gr
 // — Risk Management —
 i_atr_len     = input.int(14,    "ATR Length",        minval=1,              group="Risk Management")
 i_sl_mult     = input.float(1.5, "SL ATR Multiplier", minval=0.5, step=0.1,  group="Risk Management")
-i_tp_rr       = input.float(1.0, "TP R:R",             minval=0.5, step=0.25, group="Risk Management")
+i_tp_rr       = input.float(1.0, "TP R:R",                           minval=0.5, step=0.25, group="Risk Management")
+i_use_trail   = input.bool(false,  "Use Trailing Stop (instead of fixed TP)",             group="Risk Management")
+i_trail_mult  = input.float(1.0,   "Trail Distance (× ATR)",  minval=0.1, step=0.1,      group="Risk Management")
 
 // — Filters —
 i_pivot_lb    = input.int(5,     "Pivot Lookback/Forward",   minval=2, group="Filters")
@@ -197,13 +199,27 @@ tp_short = close - risk_short * i_tp_rr
 
 // position_size == 0 guard: prevents a new signal from reversing an open trade
 // before it has hit its own TP or SL. Each trade runs to completion independently.
+//
+// Trailing stop mode: activates at TP (1R by default), then trails by i_trail_mult × ATR.
+// trail_points is in ticks (price / syminfo.mintick) as required by strategy.exit.
+// Fixed TP mode (default): closes 100% at the limit price.
 if valid_long and strategy.position_size == 0
     strategy.entry("Long", strategy.long)
-    strategy.exit("Long Exit", from_entry="Long", stop=sl_long, limit=tp_long)
+    if i_use_trail
+        strategy.exit("Long Exit", from_entry="Long", stop=sl_long,
+                      trail_price=tp_long,
+                      trail_points=atr * i_trail_mult / syminfo.mintick)
+    else
+        strategy.exit("Long Exit", from_entry="Long", stop=sl_long, limit=tp_long)
 
 if valid_short and strategy.position_size == 0
     strategy.entry("Short", strategy.short)
-    strategy.exit("Short Exit", from_entry="Short", stop=sl_short, limit=tp_short)
+    if i_use_trail
+        strategy.exit("Short Exit", from_entry="Short", stop=sl_short,
+                      trail_price=tp_short,
+                      trail_points=atr * i_trail_mult / syminfo.mintick)
+    else
+        strategy.exit("Short Exit", from_entry="Short", stop=sl_short, limit=tp_short)
 
 // ═══════════════════════════════════════════════════════════════
 // SECTION 5: VISUALS (minimal — for chart reference only)
