@@ -195,11 +195,13 @@ tp_short = close - risk_short * i_tp_rr
 // which would make TP2/TP3 carry the full original risk (unlike live trading).
 // Commission and slippage: set in Strategy Tester → Properties.
 
-if valid_long
+// position_size == 0 guard: prevents a new signal from reversing an open trade
+// before it has hit its own TP or SL. Each trade runs to completion independently.
+if valid_long and strategy.position_size == 0
     strategy.entry("Long", strategy.long)
     strategy.exit("Long Exit", from_entry="Long", stop=sl_long, limit=tp_long)
 
-if valid_short
+if valid_short and strategy.position_size == 0
     strategy.entry("Short", strategy.short)
     strategy.exit("Short Exit", from_entry="Short", stop=sl_short, limit=tp_short)
 
