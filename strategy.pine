@@ -32,9 +32,7 @@ i_vol_ma_len  = input.int(20,    "Volume MA Length",    minval=5,             gr
 // — Risk Management —
 i_atr_len     = input.int(14,    "ATR Length",        minval=1,              group="Risk Management")
 i_sl_mult     = input.float(1.5, "SL ATR Multiplier", minval=0.5, step=0.1,  group="Risk Management")
-i_tp1_rr      = input.float(1.0, "TP1 R:R",           minval=0.5, step=0.25, group="Risk Management")
-i_tp2_rr      = input.float(2.0, "TP2 R:R",           minval=1.0, step=0.25, group="Risk Management")
-i_tp3_rr      = input.float(3.0, "TP3 R:R",           minval=1.5, step=0.25, group="Risk Management")
+i_tp_rr       = input.float(1.0, "TP R:R",             minval=0.5, step=0.25, group="Risk Management")
 
 // — Filters —
 i_pivot_lb    = input.int(5,     "Pivot Lookback/Forward",   minval=2, group="Filters")
@@ -183,13 +181,8 @@ sl_short = math.max(recent_high, close + atr * i_sl_mult) + atr * 0.1
 risk_long  = math.max(close - sl_long,  syminfo.mintick)
 risk_short = math.max(sl_short - close, syminfo.mintick)
 
-tp1_long  = close + risk_long  * i_tp1_rr
-tp2_long  = close + risk_long  * i_tp2_rr
-tp3_long  = close + risk_long  * i_tp3_rr
-
-tp1_short = close - risk_short * i_tp1_rr
-tp2_short = close - risk_short * i_tp2_rr
-tp3_short = close - risk_short * i_tp3_rr
+tp_long  = close + risk_long  * i_tp_rr
+tp_short = close - risk_short * i_tp_rr
 
 // ═══════════════════════════════════════════════════════════════
 // SECTION 4: STRATEGY ENTRIES + EXITS
@@ -197,27 +190,18 @@ tp3_short = close - risk_short * i_tp3_rr
 
 // ── 4a. Entries and exits registered together on the signal bar.
 // TradingView executes entries at next bar open (process_orders_on_close=false default).
-// Exits registered once per entry — re-registering every bar risks partial TPs
-// double-filling after their qty_percent has already been consumed.
-//
-// Scale-out: 40% at TP1, ~35% at TP2 (58.33% of remaining 60%), ~25% at TP3 (100% of remaining).
-// Note: "move SL to breakeven after TP1" is not modelled — TradingView does not support
-// dynamic stop adjustments within the strategy tester exit framework.
+// Single full exit at TP (1:1 R:R by default) — multi-TP scaling is not modelled
+// because "move SL to breakeven after TP1" cannot be implemented in the strategy tester,
+// which would make TP2/TP3 carry the full original risk (unlike live trading).
 // Commission and slippage: set in Strategy Tester → Properties.
 
 if valid_long
     strategy.entry("Long", strategy.long)
-    strategy.exit("Long SL",  from_entry="Long", stop=sl_long)
-    strategy.exit("Long TP1", from_entry="Long", qty_percent=40,    limit=tp1_long)
-    strategy.exit("Long TP2", from_entry="Long", qty_percent=58.33, limit=tp2_long)
-    strategy.exit("Long TP3", from_entry="Long", qty_percent=100,   limit=tp3_long)
+    strategy.exit("Long Exit", from_entry="Long", stop=sl_long, limit=tp_long)
 
 if valid_short
     strategy.entry("Short", strategy.short)
-    strategy.exit("Short SL",  from_entry="Short", stop=sl_short)
-    strategy.exit("Short TP1", from_entry="Short", qty_percent=40,    limit=tp1_short)
-    strategy.exit("Short TP2", from_entry="Short", qty_percent=58.33, limit=tp2_short)
-    strategy.exit("Short TP3", from_entry="Short", qty_percent=100,   limit=tp3_short)
+    strategy.exit("Short Exit", from_entry="Short", stop=sl_short, limit=tp_short)
 
 // ═══════════════════════════════════════════════════════════════
 // SECTION 5: VISUALS (minimal — for chart reference only)
